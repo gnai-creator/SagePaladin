@@ -15,6 +15,19 @@ class OutputRefinement(tf.keras.layers.Layer):
     def call(self, x):
         return self.refine(x)
 
+# === Doubt Module ===
+class DoubtModule(tf.keras.layers.Layer):
+    def __init__(self, hidden_dim):
+        super().__init__()
+        self.fc = tf.keras.Sequential([
+            tf.keras.layers.GlobalAveragePooling2D(),
+            tf.keras.layers.Dense(hidden_dim, activation='relu'),
+            tf.keras.layers.Dense(1, activation='sigmoid')
+        ])
+
+    def call(self, x):
+        return self.fc(x)
+
 # === Auxiliary Loss Module: Detect symmetry and spatial coherence ===
 def compute_auxiliary_loss(output):
     flipped = tf.image.flip_left_right(output)
@@ -229,6 +242,8 @@ class SagePaladin(tf.keras.Model):
         ])
         self.refiner = OutputRefinement(hidden_dim)
         self.gate_scale = tf.keras.layers.Dense(hidden_dim, activation='sigmoid')
+        self.doubt = DoubtModule(hidden_dim)
+        self.fallback = tf.keras.layers.Conv2D(10, 1)
 
     def call(self, x_seq, y_seq=None, training=False):
         batch = tf.shape(x_seq)[0]
@@ -277,7 +292,11 @@ class SagePaladin(tf.keras.Model):
 
         output_logits = self.decoder(blended)
         refined_logits = tf.stop_gradient(self.refiner(output_logits))
-        output_logits = 0.7 * output_logits + 0.3 * refined_logits
+        doubt_score = self.doubt(blended)
+        conservative_logits = self.fallback(blended)
+
+        output_logits = tf.where(doubt_score[:, tf.newaxis, tf.newaxis, :] > 0.7,
+                                 conservative_logits, 0.7 * output_logits + 0.3 * refined_logits)
 
         if y_seq is not None:
             expected = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
