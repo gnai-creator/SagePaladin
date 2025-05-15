@@ -314,7 +314,7 @@ class SagePaladin(tf.keras.Model):
             loss += compute_auxiliary_loss(tf.nn.softmax(output_logits))
             loss += compute_trait_losses(output_logits, expected, pain, gate, exploration, alpha)
             loss += 0.01 * tf.reduce_mean(tf.square(refined_logits - output_logits))
-            loss += 0.01 * tf.reduce_mean(tf.square(doubt_score))
+            loss += 0.01 * tf.reduce_mean(tf.square(doubt_score - 0.5))  # Added center regularization
             self._loss_pain = loss
             self.loss_tracker.update_state(loss)
 
