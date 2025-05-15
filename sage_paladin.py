@@ -19,14 +19,14 @@ class OutputRefinement(tf.keras.layers.Layer):
 class DoubtModule(tf.keras.layers.Layer):
     def __init__(self, hidden_dim):
         super().__init__()
-        self.fc = tf.keras.Sequential([
-            tf.keras.layers.GlobalAveragePooling2D(),
-            tf.keras.layers.Dense(hidden_dim, activation='relu'),
-            tf.keras.layers.Dense(1, activation='sigmoid')
-        ])
+        self.global_pool = tf.keras.layers.GlobalAveragePooling2D()
+        self.d1 = tf.keras.layers.Dense(hidden_dim, activation='relu')
+        self.d2 = tf.keras.layers.Dense(1, activation='sigmoid')
 
     def call(self, x):
-        return self.fc(x)
+        pooled = self.global_pool(x)
+        h = self.d1(pooled)
+        return self.d2(h)
 
 # === Auxiliary Loss Module: Detect symmetry and spatial coherence ===
 def compute_auxiliary_loss(output):
@@ -47,6 +47,7 @@ def compute_trait_losses(output_logits, expected, pain, gate, exploration, alpha
 
     bonus = -0.01 * ambition + 0.01 * assertiveness - 0.01 * tenacity - 0.01 * faith
     return bonus
+
 
 class EpisodicMemory(tf.keras.layers.Layer):
     def __init__(self):
@@ -244,6 +245,7 @@ class SagePaladin(tf.keras.Model):
         self.gate_scale = tf.keras.layers.Dense(hidden_dim, activation='sigmoid')
         self.doubt = DoubtModule(hidden_dim)
         self.fallback = tf.keras.layers.Conv2D(10, 1)
+        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
     def call(self, x_seq, y_seq=None, training=False):
         batch = tf.shape(x_seq)[0]
@@ -291,7 +293,7 @@ class SagePaladin(tf.keras.Model):
             blended = tf.nn.relu(blended + refined)
 
         output_logits = self.decoder(blended)
-        refined_logits = self.refiner(output_logits)  # Removed stop_gradient to allow training
+        refined_logits = self.refiner(output_logits)
         doubt_score = self.doubt(blended)
         conservative_logits = self.fallback(blended)
 
@@ -311,6 +313,13 @@ class SagePaladin(tf.keras.Model):
             loss += 0.01 * tf.reduce_sum(alpha)
             loss += compute_auxiliary_loss(tf.nn.softmax(output_logits))
             loss += compute_trait_losses(output_logits, expected, pain, gate, exploration, alpha)
+            loss += 0.01 * tf.reduce_mean(tf.square(refined_logits - output_logits))
+            loss += 0.01 * tf.reduce_mean(tf.square(doubt_score))
             self._loss_pain = loss
+            self.loss_tracker.update_state(loss)
 
         return output_logits
+
+    @property
+    def metrics(self):
+        return [self.loss_tracker]
