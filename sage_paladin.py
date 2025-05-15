@@ -291,7 +291,7 @@ class SagePaladin(tf.keras.Model):
             blended = tf.nn.relu(blended + refined)
 
         output_logits = self.decoder(blended)
-        refined_logits = tf.stop_gradient(self.refiner(output_logits))
+        refined_logits = self.refiner(output_logits)  # Removed stop_gradient to allow training
         doubt_score = self.doubt(blended)
         conservative_logits = self.fallback(blended)
 
