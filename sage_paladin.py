@@ -305,7 +305,10 @@ class SagePaladin(tf.keras.Model):
             self._alpha = alpha
             self.longterm.store(0, tf.reduce_mean(state, axis=0))
             base_loss = tf.reduce_mean(tf.square(expected_broadcast - blended_logits))
-            alpha_penalty = 0.01 * tf.reduce_mean(tf.square(alpha))
+            alpha_penalty = 0.01 * (
+                tf.reduce_mean(tf.square(blended_logits - expected_broadcast) * alpha)
+                + tf.reduce_mean(tf.square(alpha - 0.5))
+            )
             sym_loss = compute_auxiliary_loss(tf.nn.softmax(blended_logits))
             trait_loss = compute_trait_losses(blended_logits, expected_broadcast, pain, gate, exploration, alpha)
             refine_loss = 0.01 * tf.reduce_mean(tf.square(refined_logits - blended_logits))
