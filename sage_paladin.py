@@ -182,11 +182,14 @@ class TaskPainSystem(tf.keras.layers.Layer):
         gate = tf.sigmoid((adjusted_pain - self.threshold) * 10.0)
         alpha = self.alpha_layer(exploration_gate)
 
-        # Debugging enforcement to catch NaNs or Infs early
-        tf.debugging.assert_all_finite(alpha, "Alpha contém NaN ou Inf")
+        # Important: add alpha loss here
+        self.add_loss(0.01 * tf.reduce_mean(tf.square(alpha - 0.5)))
 
+        tf.debugging.assert_all_finite(alpha, "Alpha contém NaN ou Inf")
         tf.print("Pain:", per_sample_pain, "Fury_Pain:", adjusted_pain, "Gate:", gate, "Exploration Gate:", exploration_gate, "Alpha:", alpha)
+        tf.print("Alpha grad:", tape.gradient(alpha, self.alpha_layer.trainable_variables))
         return adjusted_pain, gate, exploration_gate, alpha
+
         
 class AttentionOverMemory(tf.keras.layers.Layer):
     def __init__(self, dim):
@@ -310,13 +313,13 @@ class SagePaladin(tf.keras.Model):
             self._alpha = alpha
             self.longterm.store(0, tf.reduce_mean(state, axis=0))
             base_loss = tf.reduce_mean(tf.square(expected_broadcast - blended_logits))
-            alpha_loss = 0.01 * tf.reduce_mean(tf.square(alpha - 0.5)) + 0.01 * tf.reduce_mean(alpha * tf.reduce_mean(tf.square(blended_logits - expected_broadcast), axis=[1, 2, 3], keepdims=True))
+            #alpha_loss = 0.01 * tf.reduce_mean(tf.square(alpha - 0.5)) + 0.01 * tf.reduce_mean(alpha * tf.reduce_mean(tf.square(blended_logits - expected_broadcast), axis=[1, 2, 3], keepdims=True))
             sym_loss = compute_auxiliary_loss(tf.nn.softmax(blended_logits))
             trait_loss = compute_trait_losses(blended_logits, expected_broadcast, pain, gate, exploration, alpha)
             refine_loss = 0.01 * tf.reduce_mean(tf.square(refined_logits - blended_logits))
             doubt_supervised_loss = blend_factor * tf.reduce_mean(tf.square(conservative_logits - expected_broadcast), axis=[1,2,3]) + (1 - blend_factor) * tf.reduce_mean(tf.square(blended_logits - expected_broadcast), axis=[1,2,3])
             doubt_loss = tf.reduce_mean(doubt_supervised_loss)
-            total_loss = base_loss + alpha_loss + sym_loss + trait_loss + refine_loss + 0.01 * doubt_loss
+            total_loss = base_loss + sym_loss + trait_loss + refine_loss + 0.01 * doubt_loss + tf.add_n(self.losses)
             self.add_loss(total_loss)
             self._loss_pain = total_loss
             self.loss_tracker.update_state(total_loss)
