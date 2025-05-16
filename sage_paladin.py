@@ -1,6 +1,7 @@
 # === SAGE14-FX v5.0: Paladin Mode — Faith, Ambition, Assertiveness, and Tenacity Activated ===
 
 import tensorflow as tf
+import logging
 
 # === Refinement Module: decoder-on-decoder residual enhancement ===
 class OutputRefinement(tf.keras.layers.Layer):
@@ -33,20 +34,6 @@ def compute_auxiliary_loss(output):
     flipped = tf.image.flip_left_right(output)
     symmetry_loss = tf.reduce_mean(tf.square(output - flipped))
     return 0.01 * symmetry_loss
-
-# === Additional Trait Losses ===
-def compute_trait_losses(output_logits, expected, pain, gate, exploration, alpha):
-    probs = tf.nn.softmax(output_logits)
-    confidence = tf.reduce_mean(tf.reduce_max(probs, axis=-1))
-    entropy = -tf.reduce_mean(tf.reduce_sum(probs * tf.math.log(probs + 1e-8), axis=-1))
-
-    ambition = tf.nn.relu(exploration - 0.5)
-    assertiveness = tf.nn.relu(entropy - 1.0) * gate
-    tenacity = tf.nn.relu(pain - 5.0) * (1.0 - exploration)
-    faith = tf.reduce_mean(alpha) * confidence
-
-    bonus = -0.01 * ambition + 0.01 * assertiveness - 0.01 * tenacity - 0.01 * faith
-    return bonus
 
 class EpisodicMemory(tf.keras.layers.Layer):
     def __init__(self):
@@ -174,23 +161,50 @@ class TaskPainSystem(tf.keras.layers.Layer):
         self.sensitivity = tf.Variable(tf.ones([1, 1, 1, 10]), trainable=True)
         self.alpha_layer = tf.keras.layers.Dense(1, activation='sigmoid')
 
+        # Cached metrics for reuse
+        self.per_sample_pain = None
+        self.adjusted_pain = None
+        self.exploration_gate = None
+        self.gate = None
+        self.alpha = None
+
+        self.confidence = None
+        self.entropy = None
+        self.ambition = None
+        self.assertiveness = None
+        self.tenacity = None
+        self.faith = None
+
     def call(self, pred, expected):
         diff = tf.square(pred - expected)
-        per_sample_pain = tf.reduce_mean(self.sensitivity * diff, axis=[1, 2, 3], keepdims=True)
-        exploration_gate = tf.sigmoid((per_sample_pain - 5.0) * 0.3)
-        adjusted_pain = per_sample_pain * (1.0 - exploration_gate)
-        gate = tf.sigmoid((adjusted_pain - self.threshold) * 2.5)  # Softer sigmoid curve
-        alpha = self.alpha_layer(exploration_gate)
+        self.per_sample_pain = tf.reduce_mean(self.sensitivity * diff, axis=[1, 2, 3], keepdims=True)
+        self.exploration_gate = tf.sigmoid((self.per_sample_pain - 5.0) * 0.3)
+        self.adjusted_pain = self.per_sample_pain * (1.0 - self.exploration_gate)
+        self.gate = tf.sigmoid((self.adjusted_pain - self.threshold) * 2.5)
+        self.alpha = self.alpha_layer(self.exploration_gate)
 
-        # Fix: ensure alpha_loss and exploration regularization loss are scalars
-        alpha_loss = 0.01 * tf.reduce_mean(tf.square(alpha - 0.5))
-        gate_reg_loss = 0.01 * tf.reduce_mean(tf.square(exploration_gate - 0.5))
+        alpha_loss = 0.01 * tf.reduce_mean(tf.square(self.alpha - 0.5))
+        gate_reg_loss = 0.01 * tf.reduce_mean(tf.square(self.exploration_gate - 0.5))
         self.add_loss(tf.reshape(alpha_loss, []))
         self.add_loss(tf.reshape(gate_reg_loss, []))
 
-        tf.debugging.assert_all_finite(alpha, "Alpha contém NaN ou Inf")
-        tf.print("Pain:", per_sample_pain, "Fury_Pain:", adjusted_pain, "Gate:", gate, "Exploration Gate:", exploration_gate, "Alpha:", alpha)
-        return adjusted_pain, gate, exploration_gate, alpha
+        logging.info(f"Pain: {self.per_sample_pain.numpy()}, Fury_Pain: {self.adjusted_pain.numpy()}, Gate: {self.gate.numpy()}, Exploration Gate: {self.exploration_gate.numpy()}, Alpha: {self.alpha.numpy()}")
+
+        return self.adjusted_pain, self.gate, self.exploration_gate, self.alpha
+
+    def compute_trait_loss(self, output_logits, expected):
+        probs = tf.nn.softmax(output_logits)
+        self.confidence = tf.reduce_mean(tf.reduce_max(probs, axis=-1))
+        self.entropy = -tf.reduce_mean(tf.reduce_sum(probs * tf.math.log(probs + 1e-8), axis=-1))
+
+        self.ambition = tf.nn.relu(self.exploration_gate - 0.5)
+        self.assertiveness = self.gate
+        self.tenacity = tf.nn.relu(self.adjusted_pain - 5.0) * (1.0 - self.exploration_gate)
+        self.faith = tf.reduce_mean(self.alpha) * self.confidence
+
+        bonus = -0.01 * self.ambition + 0.01 * self.assertiveness - 0.01 * self.tenacity - 0.01 * self.faith
+        entropy_loss = 0.01 * self.entropy
+        return bonus + entropy_loss
         
 class AttentionOverMemory(tf.keras.layers.Layer):
     def __init__(self, dim):
@@ -302,8 +316,10 @@ class SagePaladin(tf.keras.Model):
         conservative_logits = self.fallback(blended)
 
         blend_factor = tf.clip_by_value(doubt_score, 0.0, 1.0)
-        blended_logits = blend_factor * conservative_logits + (1 - blend_factor) * (0.7 * output_logits + 0.3 * refined_logits)
+        #blended_logits = blend_factor * conservative_logits + (1 - blend_factor) * (0.7 * output_logits + 0.3 * refined_logits)
+        blended_logits = 0.5 * refined_logits + 0.5 * conservative_logits
 
+        
         if y_seq is not None:
             expected_broadcast = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
             expected_broadcast = tf.reshape(expected_broadcast, tf.shape(blended_logits))
@@ -315,14 +331,12 @@ class SagePaladin(tf.keras.Model):
             self.longterm.store(0, tf.reduce_mean(state, axis=0))
             base_loss = tf.reduce_mean(tf.square(expected_broadcast - blended_logits))
             sym_loss = compute_auxiliary_loss(tf.nn.softmax(blended_logits))
-            trait_loss = compute_trait_losses(blended_logits, expected_broadcast, pain, gate, exploration, alpha)
+            trait_loss = self.pain_system.compute_trait_loss(blended_logits, expected_broadcast, pain, gate, exploration, alpha)
             refine_loss = 0.01 * tf.reduce_mean(tf.square(refined_logits - blended_logits))
             doubt_supervised_loss = blend_factor * tf.reduce_mean(tf.square(conservative_logits - expected_broadcast), axis=[1,2,3]) + (1 - blend_factor) * tf.reduce_mean(tf.square(blended_logits - expected_broadcast), axis=[1,2,3])
             doubt_loss = tf.reduce_mean(doubt_supervised_loss)
             extra_losses = tf.add_n(self.losses) if self.losses else 0.0
             total_loss = base_loss + sym_loss + trait_loss + refine_loss + 0.01 * doubt_loss + extra_losses
-            self._loss_pain = total_loss
-            self.loss_tracker.update_state(total_loss)
             self._loss_pain = total_loss
             self.loss_tracker.update_state(total_loss)
 
