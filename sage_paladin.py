@@ -166,6 +166,7 @@ class ChoiceHypothesisModule(tf.keras.layers.Layer):
             weights = tf.reshape(weights, [-1, 4, 1, 1, 1])
             return tf.reduce_sum(stacked * weights, axis=1)
 
+# === Task Pain System with fixed gradient flow ===
 class TaskPainSystem(tf.keras.layers.Layer):
     def __init__(self, dim):
         super().__init__()
@@ -175,13 +176,12 @@ class TaskPainSystem(tf.keras.layers.Layer):
 
     def call(self, pred, expected):
         diff = tf.square(pred - expected)
-        raw_pain = tf.reduce_mean(self.sensitivity * diff)
-        exploration_gate = tf.clip_by_value(tf.nn.sigmoid((raw_pain - 2.0) * 0.5), 0.0, 1.0)
-        adjusted_pain = raw_pain * (1.0 - exploration_gate)
+        per_sample_pain = tf.reduce_mean(self.sensitivity * diff, axis=[1, 2, 3], keepdims=True)
+        exploration_gate = tf.clip_by_value(tf.nn.sigmoid((per_sample_pain - 2.0) * 0.5), 0.0, 1.0)
+        adjusted_pain = per_sample_pain * (1.0 - exploration_gate)
         gate = tf.sigmoid((adjusted_pain - self.threshold) * 10.0)
-        exploration_exp = tf.reshape(exploration_gate, [1, 1])
-        alpha = self.alpha_layer(exploration_exp)
-        tf.print("Pain:", raw_pain, "Fury_Pain:", adjusted_pain, "Gate:", gate, "Exploration Gate:", exploration_gate, "Alpha:", alpha)
+        alpha = self.alpha_layer(exploration_gate)
+        tf.print("Pain:", per_sample_pain, "Fury_Pain:", adjusted_pain, "Gate:", gate, "Exploration Gate:", exploration_gate, "Alpha:", alpha)
         return adjusted_pain, gate, exploration_gate, alpha
 
 class AttentionOverMemory(tf.keras.layers.Layer):
