@@ -297,7 +297,7 @@ class SagePaladin(tf.keras.Model):
 
         if y_seq is not None:
             expected = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
-            expected_broadcast = tf.tile(tf.expand_dims(expected, axis=1), [1, tf.shape(blended_logits)[1], tf.shape(blended_logits)[2], 1])
+            expected_broadcast = tf.tile(tf.expand_dims(expected, axis=1), [1, blended_logits.shape[1], blended_logits.shape[2], 1])
             pain, gate, exploration, alpha = self.pain_system(blended_logits, expected_broadcast)
             self._pain = pain
             self._gate = gate
