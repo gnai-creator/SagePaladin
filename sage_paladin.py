@@ -312,7 +312,7 @@ class SagePaladin(tf.keras.Model):
             doubt_supervised_loss = blend_factor * tf.reduce_mean(tf.square(conservative_logits - expected_broadcast), axis=[1,2,3]) + (1 - blend_factor) * tf.reduce_mean(tf.square(blended_logits - expected_broadcast), axis=[1,2,3])
             doubt_loss = tf.reduce_mean(doubt_supervised_loss)
             total_loss = base_loss + alpha_penalty + sym_loss + trait_loss + refine_loss + 0.01 * doubt_loss
-            self.add_loss(0.01 * doubt_loss)
+            self.add_loss(total_loss)            
             self._loss_pain = total_loss
             self.loss_tracker.update_state(total_loss)
 
