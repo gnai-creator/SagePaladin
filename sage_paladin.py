@@ -306,7 +306,7 @@ class SagePaladin(tf.keras.Model):
             self.longterm.store(0, tf.reduce_mean(state, axis=0))
             loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
             base_loss = loss_fn(y_seq[:, -1], blended_logits)
-            alpha_penalty = 0.01 * tf.reduce_mean(alpha * tf.reduce_max(tf.abs(blended_logits - expected_broadcast), axis=-1, keepdims=True))
+            alpha_penalty = 0.01 * tf.reduce_mean(alpha * tf.square(blended_logits - expected_broadcast))
             sym_loss = compute_auxiliary_loss(tf.nn.softmax(blended_logits))
             trait_loss = compute_trait_losses(blended_logits, expected_broadcast, pain, gate, exploration, alpha)
             refine_loss = 0.01 * tf.reduce_mean(tf.square(refined_logits - blended_logits))
