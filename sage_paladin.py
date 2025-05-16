@@ -19,7 +19,7 @@ class OutputRefinement(tf.keras.layers.Layer):
 class DoubtModule(tf.keras.layers.Layer):
     def __init__(self, hidden_dim):
         super().__init__()
-        self.global_pool = tf.keras.layers.GlobalAveragePooling2D()
+        self.global_pool = tf.keras.layers.GlobalAveragePooling3D()
         self.d1 = tf.keras.layers.Dense(hidden_dim, activation='relu')
         self.d2 = tf.keras.layers.Dense(1, activation='sigmoid')
 
@@ -289,7 +289,7 @@ class SagePaladin(tf.keras.Model):
 
         output_logits = self.decoder(blended)
         refined_logits = self.refiner(output_logits)
-        doubt_score = self.doubt(blended)
+        doubt_score = self.doubt(tf.expand_dims(blended, axis=1))
         conservative_logits = self.fallback(blended)
 
         blend_factor = tf.clip_by_value(doubt_score, 0.0, 1.0)
@@ -297,7 +297,7 @@ class SagePaladin(tf.keras.Model):
 
         if y_seq is not None:
             expected = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
-            expected_broadcast = tf.tile(tf.reshape(expected, [batch, 1, 1, 10]), [1, 20, 20, 1])
+            expected_broadcast = tf.tile(tf.expand_dims(expected, axis=1), [1, tf.shape(blended_logits)[1], tf.shape(blended_logits)[2], 1])
             pain, gate, exploration, alpha = self.pain_system(blended_logits, expected_broadcast)
             self._pain = pain
             self._gate = gate
@@ -323,4 +323,3 @@ class SagePaladin(tf.keras.Model):
     @property
     def metrics(self):
         return [self.loss_tracker]
-
