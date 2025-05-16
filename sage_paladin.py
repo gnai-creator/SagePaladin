@@ -48,7 +48,6 @@ def compute_trait_losses(output_logits, expected, pain, gate, exploration, alpha
     bonus = -0.01 * ambition + 0.01 * assertiveness - 0.01 * tenacity - 0.01 * faith
     return bonus
 
-
 class EpisodicMemory(tf.keras.layers.Layer):
     def __init__(self):
         super().__init__()
@@ -284,10 +283,6 @@ class SagePaladin(tf.keras.Model):
         last_weight = gate_softmax[..., self.hidden_dim:]
         blended = chosen_weight * chosen_transform + last_weight * last_input_encoded
 
-        if hasattr(self, '_alpha'):
-            alpha = tf.reshape(self._alpha, [batch, 1, 1, 1])
-            blended = alpha * blended + (1 - alpha) * last_input_encoded
-
         for _ in range(2):
             refined = self.attn(blended)
             blended = tf.nn.relu(blended + refined)
@@ -297,28 +292,32 @@ class SagePaladin(tf.keras.Model):
         doubt_score = self.doubt(blended)
         conservative_logits = self.fallback(blended)
 
-        output_logits = tf.where(doubt_score[:, tf.newaxis, tf.newaxis, :] > 0.7,
-                                 conservative_logits, 0.7 * output_logits + 0.3 * refined_logits)
+        blended_logits = tf.where(doubt_score[:, tf.newaxis, tf.newaxis, :] > 0.7,
+                                  conservative_logits, 0.7 * output_logits + 0.3 * refined_logits)
 
         if y_seq is not None:
             expected = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
-            pain, gate, exploration, alpha = self.pain_system(output_logits, expected)
+            pain, gate, exploration, alpha = self.pain_system(blended_logits, expected)
             self._pain = pain
             self._gate = gate
             self._exploration = exploration
             self._alpha = alpha
             self.longterm.store(0, tf.reduce_mean(state, axis=0))
             loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-            loss = loss_fn(y_seq[:, -1], output_logits)
-            loss += 0.01 * tf.reduce_sum(alpha)
-            loss += compute_auxiliary_loss(tf.nn.softmax(output_logits))
-            loss += compute_trait_losses(output_logits, expected, pain, gate, exploration, alpha)
-            loss += 0.01 * tf.reduce_mean(tf.square(refined_logits - output_logits))
-            loss += 0.01 * tf.reduce_mean(tf.square(doubt_score - 0.5))  # Added center regularization
-            self._loss_pain = loss
-            self.loss_tracker.update_state(loss)
+            base_loss = loss_fn(y_seq[:, -1], blended_logits)
+            alpha_penalty = 0.01 * tf.reduce_sum(alpha)
+            sym_loss = compute_auxiliary_loss(tf.nn.softmax(blended_logits))
+            trait_loss = compute_trait_losses(blended_logits, expected, pain, gate, exploration, alpha)
+            refine_loss = 0.01 * tf.reduce_mean(tf.square(refined_logits - blended_logits))
+            doubt_supervised_loss = tf.where(tf.squeeze(doubt_score) > 0.7,
+                                             tf.reduce_mean(tf.square(conservative_logits - expected), axis=[1,2,3]),
+                                             0.0)
+            doubt_loss = tf.reduce_mean(doubt_supervised_loss)
+            total_loss = base_loss + alpha_penalty + sym_loss + trait_loss + refine_loss + 0.01 * doubt_loss
+            self._loss_pain = total_loss
+            self.loss_tracker.update_state(total_loss)
 
-        return output_logits
+        return blended_logits
 
     @property
     def metrics(self):
