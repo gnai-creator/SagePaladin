@@ -187,7 +187,6 @@ class TaskPainSystem(tf.keras.layers.Layer):
 
         tf.debugging.assert_all_finite(alpha, "Alpha contém NaN ou Inf")
         tf.print("Pain:", per_sample_pain, "Fury_Pain:", adjusted_pain, "Gate:", gate, "Exploration Gate:", exploration_gate, "Alpha:", alpha)
-        tf.print("Alpha grad:", tape.gradient(alpha, self.alpha_layer.trainable_variables))
         return adjusted_pain, gate, exploration_gate, alpha
 
         
