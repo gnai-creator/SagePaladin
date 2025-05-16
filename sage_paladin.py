@@ -177,14 +177,16 @@ class TaskPainSystem(tf.keras.layers.Layer):
     def call(self, pred, expected):
         diff = tf.square(pred - expected)
         per_sample_pain = tf.reduce_mean(self.sensitivity * diff, axis=[1, 2, 3], keepdims=True)
-        exploration_gate = tf.clip_by_value(tf.nn.sigmoid((per_sample_pain - 2.0) * 0.5), 0.0, 1.0)
+        exploration_gate = tf.sigmoid((per_sample_pain - 5.0) * 0.3)
         adjusted_pain = per_sample_pain * (1.0 - exploration_gate)
         gate = tf.sigmoid((adjusted_pain - self.threshold) * 10.0)
         alpha = self.alpha_layer(exploration_gate)
 
-        # Fix: ensure alpha_loss is scalar
+        # Fix: ensure alpha_loss and exploration regularization loss are scalars
         alpha_loss = 0.01 * tf.reduce_mean(tf.square(alpha - 0.5))
+        gate_reg_loss = 0.01 * tf.reduce_mean(tf.square(exploration_gate - 0.5))
         self.add_loss(tf.reshape(alpha_loss, []))
+        self.add_loss(tf.reshape(gate_reg_loss, []))
 
         tf.debugging.assert_all_finite(alpha, "Alpha contém NaN ou Inf")
         tf.print("Pain:", per_sample_pain, "Fury_Pain:", adjusted_pain, "Gate:", gate, "Exploration Gate:", exploration_gate, "Alpha:", alpha)
