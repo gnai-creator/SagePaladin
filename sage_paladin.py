@@ -182,13 +182,13 @@ class TaskPainSystem(tf.keras.layers.Layer):
         gate = tf.sigmoid((adjusted_pain - self.threshold) * 10.0)
         alpha = self.alpha_layer(exploration_gate)
 
-        # Important: add alpha loss here
-        self.add_loss(0.01 * tf.reduce_mean(tf.square(alpha - 0.5)))
+        alpha_loss = 0.01 * tf.reduce_mean(tf.square(alpha - 0.5))
+        alpha_loss = tf.reduce_mean(tf.reshape(alpha_loss, []))  # Ensure scalar shape
+        self.add_loss(alpha_loss)
 
         tf.debugging.assert_all_finite(alpha, "Alpha contém NaN ou Inf")
         tf.print("Pain:", per_sample_pain, "Fury_Pain:", adjusted_pain, "Gate:", gate, "Exploration Gate:", exploration_gate, "Alpha:", alpha)
         return adjusted_pain, gate, exploration_gate, alpha
-
         
 class AttentionOverMemory(tf.keras.layers.Layer):
     def __init__(self, dim):
