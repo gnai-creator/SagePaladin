@@ -312,14 +312,15 @@ class SagePaladin(tf.keras.Model):
             self._alpha = alpha
             self.longterm.store(0, tf.reduce_mean(state, axis=0))
             base_loss = tf.reduce_mean(tf.square(expected_broadcast - blended_logits))
-            #alpha_loss = 0.01 * tf.reduce_mean(tf.square(alpha - 0.5)) + 0.01 * tf.reduce_mean(alpha * tf.reduce_mean(tf.square(blended_logits - expected_broadcast), axis=[1, 2, 3], keepdims=True))
             sym_loss = compute_auxiliary_loss(tf.nn.softmax(blended_logits))
             trait_loss = compute_trait_losses(blended_logits, expected_broadcast, pain, gate, exploration, alpha)
             refine_loss = 0.01 * tf.reduce_mean(tf.square(refined_logits - blended_logits))
             doubt_supervised_loss = blend_factor * tf.reduce_mean(tf.square(conservative_logits - expected_broadcast), axis=[1,2,3]) + (1 - blend_factor) * tf.reduce_mean(tf.square(blended_logits - expected_broadcast), axis=[1,2,3])
             doubt_loss = tf.reduce_mean(doubt_supervised_loss)
-            total_loss = base_loss + sym_loss + trait_loss + refine_loss + 0.01 * doubt_loss + tf.add_n(self.losses)
-            self.add_loss(total_loss)
+            extra_losses = tf.add_n(self.losses) if self.losses else 0.0
+            total_loss = base_loss + sym_loss + trait_loss + refine_loss + 0.01 * doubt_loss + extra_losses
+            self._loss_pain = total_loss
+            self.loss_tracker.update_state(total_loss)
             self._loss_pain = total_loss
             self.loss_tracker.update_state(total_loss)
 
