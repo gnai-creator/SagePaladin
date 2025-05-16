@@ -296,7 +296,8 @@ class SagePaladin(tf.keras.Model):
         blended_logits = blend_factor * conservative_logits + (1 - blend_factor) * (0.7 * output_logits + 0.3 * refined_logits)
 
         if y_seq is not None:
-            expected_broadcast = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
+            expected = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
+            expected_broadcast = tf.tile(tf.reshape(expected, [batch, 1, 1, 10]), [1, 20, 20, 1])
             pain, gate, exploration, alpha = self.pain_system(blended_logits, expected_broadcast)
             self._pain = pain
             self._gate = gate
@@ -311,8 +312,9 @@ class SagePaladin(tf.keras.Model):
             refine_loss = 0.01 * tf.reduce_mean(tf.square(refined_logits - blended_logits))
             doubt_supervised_loss = blend_factor * tf.reduce_mean(tf.square(conservative_logits - expected_broadcast), axis=[1,2,3]) + (1 - blend_factor) * tf.reduce_mean(tf.square(blended_logits - expected_broadcast), axis=[1,2,3])
             doubt_loss = tf.reduce_mean(doubt_supervised_loss)
-            total_loss = base_loss + alpha_penalty + sym_loss + trait_loss + refine_loss + 0.01 * doubt_loss
-            self.add_loss(total_loss)            
+            alpha_reg = tf.reduce_mean(tf.square(alpha - 0.5))
+            total_loss = base_loss + alpha_penalty + sym_loss + trait_loss + refine_loss + 0.01 * doubt_loss + 0.01 * alpha_reg
+            self.add_loss(total_loss)
             self._loss_pain = total_loss
             self.loss_tracker.update_state(total_loss)
 
