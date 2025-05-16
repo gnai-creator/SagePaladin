@@ -153,15 +153,14 @@ class ChoiceHypothesisModule(tf.keras.layers.Layer):
             weights = tf.reshape(weights, [-1, 4, 1, 1, 1])
             return tf.reduce_sum(stacked * weights, axis=1)
 
-# === Task Pain System with fixed gradient flow ===
+# === Task Pain System with expanded trait metrics ===
 class TaskPainSystem(tf.keras.layers.Layer):
     def __init__(self, dim):
         super().__init__()
-        self.threshold = tf.Variable(1.0, trainable=True)  # Increased initial threshold
+        self.threshold = tf.Variable(1.0, trainable=True)
         self.sensitivity = tf.Variable(tf.ones([1, 1, 1, 10]), trainable=True)
         self.alpha_layer = tf.keras.layers.Dense(1, activation='sigmoid')
 
-        # Cached metrics for reuse
         self.per_sample_pain = None
         self.adjusted_pain = None
         self.exploration_gate = None
@@ -174,6 +173,12 @@ class TaskPainSystem(tf.keras.layers.Layer):
         self.assertiveness = None
         self.tenacity = None
         self.faith = None
+        self.curiosity = None
+        self.patience = None
+        self.resilience = None
+        self.creativity = None
+        self.empathy = None
+        self.flexibility = None
 
     def call(self, pred, expected):
         diff = tf.square(pred - expected)
@@ -201,8 +206,27 @@ class TaskPainSystem(tf.keras.layers.Layer):
         self.assertiveness = self.gate
         self.tenacity = tf.nn.relu(self.adjusted_pain - 5.0) * (1.0 - self.exploration_gate)
         self.faith = tf.reduce_mean(self.alpha) * self.confidence
+        self.curiosity = self.entropy
 
-        bonus = -0.01 * self.ambition + 0.01 * self.assertiveness - 0.01 * self.tenacity - 0.01 * self.faith
+        # New traits
+        self.patience = tf.exp(-self.adjusted_pain)
+        self.resilience = tf.exp(-tf.abs(self.per_sample_pain - self.adjusted_pain))
+        self.creativity = tf.math.reduce_std(probs)
+        self.empathy = tf.reduce_mean(self.alpha) * tf.reduce_mean(self.gate)
+        self.flexibility = tf.reduce_mean(tf.abs(pred - expected))
+
+        bonus = (
+            -0.01 * self.ambition +
+            0.01 * self.assertiveness -
+            0.01 * self.tenacity -
+            0.01 * self.faith +
+            0.01 * self.curiosity +
+            0.01 * self.patience +
+            0.01 * self.resilience +
+            0.01 * self.creativity +
+            0.01 * self.empathy -
+            0.01 * self.flexibility
+        )
         entropy_loss = 0.01 * self.entropy
         return bonus + entropy_loss
         
