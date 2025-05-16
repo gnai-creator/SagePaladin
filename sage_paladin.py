@@ -289,7 +289,7 @@ class SagePaladin(tf.keras.Model):
 
         output_logits = self.decoder(blended)
         refined_logits = self.refiner(output_logits)
-        doubt_score = self.doubt(tf.expand_dims(blended, axis=1))
+        doubt_score = self.doubt(blended)
         conservative_logits = self.fallback(blended)
 
         blend_factor = tf.clip_by_value(doubt_score, 0.0, 1.0)
@@ -297,14 +297,15 @@ class SagePaladin(tf.keras.Model):
 
         if y_seq is not None:
             expected_broadcast = tf.one_hot(y_seq[:, -1], depth=10, dtype=tf.float32)
+            expected_broadcast = tf.reshape(expected_broadcast, tf.shape(blended_logits))
             pain, gate, exploration, alpha = self.pain_system(blended_logits, expected_broadcast)
             self._pain = pain
             self._gate = gate
             self._exploration = exploration
             self._alpha = alpha
             self.longterm.store(0, tf.reduce_mean(state, axis=0))
-            loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-            base_loss = loss_fn(tf.reshape(y_seq[:, -1], [batch, -1]), tf.reshape(blended_logits, [batch, -1, 10]))
+            loss_fn = tf.keras.losses.MeanSquaredError()
+            base_loss = loss_fn(expected_broadcast, blended_logits)
             alpha_penalty = 0.01 * tf.reduce_mean(alpha * tf.square(blended_logits - expected_broadcast))
             sym_loss = compute_auxiliary_loss(tf.nn.softmax(blended_logits))
             trait_loss = compute_trait_losses(blended_logits, expected_broadcast, pain, gate, exploration, alpha)
