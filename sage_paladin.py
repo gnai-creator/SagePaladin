@@ -170,7 +170,7 @@ class ChoiceHypothesisModule(tf.keras.layers.Layer):
 class TaskPainSystem(tf.keras.layers.Layer):
     def __init__(self, dim):
         super().__init__()
-        self.threshold = tf.Variable(0.1, trainable=True)
+        self.threshold = tf.Variable(1.0, trainable=True)  # Increased initial threshold
         self.sensitivity = tf.Variable(tf.ones([1, 1, 1, 10]), trainable=True)
         self.alpha_layer = tf.keras.layers.Dense(1, activation='sigmoid')
 
@@ -179,7 +179,7 @@ class TaskPainSystem(tf.keras.layers.Layer):
         per_sample_pain = tf.reduce_mean(self.sensitivity * diff, axis=[1, 2, 3], keepdims=True)
         exploration_gate = tf.sigmoid((per_sample_pain - 5.0) * 0.3)
         adjusted_pain = per_sample_pain * (1.0 - exploration_gate)
-        gate = tf.sigmoid((adjusted_pain - self.threshold) * 10.0)
+        gate = tf.sigmoid((adjusted_pain - self.threshold) * 2.5)  # Softer sigmoid curve
         alpha = self.alpha_layer(exploration_gate)
 
         # Fix: ensure alpha_loss and exploration regularization loss are scalars
