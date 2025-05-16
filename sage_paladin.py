@@ -19,7 +19,7 @@ class OutputRefinement(tf.keras.layers.Layer):
 class DoubtModule(tf.keras.layers.Layer):
     def __init__(self, hidden_dim):
         super().__init__()
-        self.global_pool = tf.keras.layers.GlobalAveragePooling3D()
+        self.global_pool = tf.keras.layers.GlobalAveragePooling2D()
         self.d1 = tf.keras.layers.Dense(hidden_dim, activation='relu')
         self.d2 = tf.keras.layers.Dense(1, activation='sigmoid')
 
@@ -304,8 +304,7 @@ class SagePaladin(tf.keras.Model):
             self._exploration = exploration
             self._alpha = alpha
             self.longterm.store(0, tf.reduce_mean(state, axis=0))
-            loss_fn = tf.keras.losses.MeanSquaredError()
-            base_loss = loss_fn(expected_broadcast, blended_logits)
+            base_loss = tf.reduce_mean(tf.square(expected_broadcast - blended_logits))
             alpha_penalty = 0.01 * tf.reduce_mean(alpha * tf.square(blended_logits - expected_broadcast))
             sym_loss = compute_auxiliary_loss(tf.nn.softmax(blended_logits))
             trait_loss = compute_trait_losses(blended_logits, expected_broadcast, pain, gate, exploration, alpha)
