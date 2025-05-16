@@ -181,9 +181,13 @@ class TaskPainSystem(tf.keras.layers.Layer):
         adjusted_pain = per_sample_pain * (1.0 - exploration_gate)
         gate = tf.sigmoid((adjusted_pain - self.threshold) * 10.0)
         alpha = self.alpha_layer(exploration_gate)
+
+        # Debugging enforcement to catch NaNs or Infs early
+        tf.debugging.assert_all_finite(alpha, "Alpha contém NaN ou Inf")
+
         tf.print("Pain:", per_sample_pain, "Fury_Pain:", adjusted_pain, "Gate:", gate, "Exploration Gate:", exploration_gate, "Alpha:", alpha)
         return adjusted_pain, gate, exploration_gate, alpha
-
+        
 class AttentionOverMemory(tf.keras.layers.Layer):
     def __init__(self, dim):
         super().__init__()
@@ -246,7 +250,7 @@ class SagePaladin(tf.keras.Model):
         self.doubt = DoubtModule(hidden_dim)
         self.fallback = tf.keras.layers.Conv2D(10, 1)
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-
+        
     def call(self, x_seq, y_seq=None, training=False):
         batch = tf.shape(x_seq)[0]
         T = tf.shape(x_seq)[1]
